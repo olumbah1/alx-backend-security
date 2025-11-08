@@ -122,3 +122,130 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# Cache configuration (using Redis for production)
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        },
+        'KEY_PREFIX': 'ip_tracking',
+        'TIMEOUT': 300,
+    }
+}
+
+# Alternative: In-memory cache for development
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+#         'LOCATION': 'unique-snowflake',
+#     }
+# }
+
+# Rate limiting configuration
+RATELIMIT_ENABLE = True
+RATELIMIT_USE_CACHE = 'default'
+RATELIMIT_VIEW = 'ip_tracking.views.rate_limit_handler'
+
+# Rate limit by user or IP
+# For authenticated users, use user ID; for anonymous, use IP
+def get_ratelimit_key(group, request):
+    if request.user.is_authenticated:
+        return f'user_{request.user.id}'
+    from ipware import get_client_ip
+    client_ip, _ = get_client_ip(request)
+    return f'ip_{client_ip or "unknown"}'
+
+RATELIMIT_KEY_PREFIX = 'rl'
+
+# IP Geolocation settings
+IPGEOLOCATION_SETTINGS = {
+    'BACKEND': 'django_ipgeolocation.backends.IPGeolocationAPI',
+    'API_KEY': 'your-api-key-here',  # Get from ipgeolocation.io
+    'CACHE_TIMEOUT': 86400,  # 24 hours
+}
+
+# Alternative: MaxMind GeoIP2 (requires database file)
+# GEOIP_PATH = '/path/to/geoip/database/'
+
+# Celery configuration for async tasks
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat schedule for periodic tasks
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'detect-anomalies': {
+        'task': 'ip_tracking.tasks.detect_anomalies',
+        'schedule': crontab(minute=0),  # Every hour
+    },
+    'cleanup-old-logs': {
+        'task': 'ip_tracking.tasks.cleanup_old_logs',
+        'schedule': crontab(hour=2, minute=0),  # Daily at 2 AM
+        'kwargs': {'days': 30},
+    },
+    'anonymize-old-ips': {
+        'task': 'ip_tracking.tasks.anonymize_old_ips',
+        'schedule': crontab(hour=3, minute=0),  # Daily at 3 AM
+        'kwargs': {'days': 90},
+    },
+    'generate-security-report': {
+        'task': 'ip_tracking.tasks.generate_security_report',
+        'schedule': crontab(hour=8, minute=0),  # Daily at 8 AM
+    },
+}
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': 'logs/ip_tracking.log',
+            'maxBytes': 1024 * 1024 * 10,  # 10 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'ip_tracking': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+
+# Security settings
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+# Privacy and compliance settings
+IP_TRACKING_SETTINGS = {
+    'ANONYMIZE_AFTER_DAYS': 90,
+    'DELETE_AFTER_DAYS': 365,
+    'ENABLE_GEOLOCATION': True,
+    'AUTO_BLOCK_THRESHOLD': 3,  # Number of suspicious flags before auto-blocking
+    'HIGH_VOLUME_THRESHOLD': 100,  # Requests per hour
+}
