@@ -19,3 +19,19 @@ class RequestLog(models.Model):
     
     def __str__(self):
         return f"{self.ip_address} - {self.path} at {self.timestamp}"
+    
+
+class BlockedIP(models.Model):
+    """Blacklist of blocked IP addresses"""
+    ip_address = models.GenericIPAddressField(unique=True, db_index=True)
+    reason = models.TextField(blank=True)
+    blocked_at = models.DateTimeField(default=timezone.now)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        verbose_name = "Blocked IP"
+        verbose_name_plural = "Blocked IPs"
+        ordering = ['-blocked_at']
+    
+    def __str__(self):
+        return f"{self.ip_address} ({'Active' if self.is_active else 'Inactive'})"
